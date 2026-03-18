@@ -27,16 +27,7 @@ const CONFIG = {
 console.log('Chargement de CardEncoder.dll...');
 const lib = koffi.load('./CardEncoder.dll');
 
-// Définir les fonctions de la DLL avec des chaînes de caractères pour les types
-const CE_ConnectComm = lib.func('CE_ConnectComm', 'int', ['string']);
-const CE_DisconnectComm = lib.func('CE_DisconnectComm', 'int', []);
-const CE_InitCardEncoder = lib.func('CE_InitCardEncoder', 'int', ['string']);
-const CE_WriteCard = lib.func('CE_WriteCard', 'int', ['string', 'int', 'int', 'string', 'uint64', 'bool']);
-const CE_ReadCard = lib.func('CE_ReadCard', 'int', ['string', 'pointer']);
-const CE_GetCardNo = lib.func('CE_GetCardNo', 'int', ['pointer']);
-const CE_Beep = lib.func('CE_Beep', 'int', ['int', 'int', 'int']);
-const CE_GetVersion = lib.func('CE_GetVersion', 'int', ['pointer']);
-const CE_ClearCard = lib.func('CE_ClearCard', 'int', ['string']);
+
 
 console.log('✓ DLL chargée avec succès');
 
