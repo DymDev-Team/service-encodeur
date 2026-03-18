@@ -15,8 +15,8 @@ app.use(bodyParser.json());
 // Configuration
 const CONFIG = {
     ttlockApi: process.env.TTLOCK_API || 'https://euapi.ttlock.com/v3',
-    clientId: process.env.CLIENT_ID || 'VOTRE_CLIENT_ID',
-    clientSecret: process.env.CLIENT_SECRET || 'VOTRE_CLIENT_SECRET',
+    clientId: process.env.CLIENT_ID || '5e53c28e38d94c0d99d0f83fe9e9fe3a',
+    clientSecret: process.env.CLIENT_SECRET || 'd441734ad779dfea59d09663127bfd46',
     comPort: process.env.COM_PORT || 'COM3',
     currentHotelInfo: null,
     hotelInfoExpiry: null,
