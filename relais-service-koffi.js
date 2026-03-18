@@ -27,6 +27,17 @@ const CONFIG = {
 console.log('Chargement de CardEncoder.dll...');
 const lib = koffi.load('./CardEncoder.dll');
 
+// Déclaration des symboles exportés par la DLL
+// (équivalent aux anciennes définitions ffi, mais via Koffi)
+const CE_ConnectComm = lib.func('int CE_ConnectComm(str)');
+const CE_DisconnectComm = lib.func('int CE_DisconnectComm()');
+const CE_InitCardEncoder = lib.func('int CE_InitCardEncoder(str)');
+const CE_WriteCard = lib.func('int CE_WriteCard(str, int, int, str, int64, bool)');
+const CE_ReadCard = lib.func('int CE_ReadCard(str, void *)');
+const CE_GetCardNo = lib.func('int CE_GetCardNo(void *)');
+const CE_ClearCard = lib.func('int CE_ClearCard(str)');
+const CE_Beep = lib.func('int CE_Beep(int, int, int)');
+const CE_GetVersion = lib.func('int CE_GetVersion(void *)');
 
 
 console.log('✓ DLL chargée avec succès');
