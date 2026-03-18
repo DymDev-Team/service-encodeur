@@ -33,17 +33,15 @@ const lib = koffi.load('./CardEncoder.dll');
 const int = koffi.int;
 const bool = koffi.bool;
 const uint64 = koffi.uint64;
-const pointer = koffi.pointer(koffi.void);
-
-// Définir les fonctions de la DLL avec la syntaxe CORRECTE
+// Définir les fonctions de la DLL avec des types explicites (compatibles koffi v2)
 const CE_ConnectComm = lib.func('CE_ConnectComm', int, ['string']);
 const CE_DisconnectComm = lib.func('CE_DisconnectComm', int, []);
 const CE_InitCardEncoder = lib.func('CE_InitCardEncoder', int, ['string']);
 const CE_WriteCard = lib.func('CE_WriteCard', int, ['string', int, int, 'string', uint64, bool]);
-const CE_ReadCard = lib.func('CE_ReadCard', int, ['string', pointer]);
-const CE_GetCardNo = lib.func('CE_GetCardNo', int, [pointer]);
+const CE_ReadCard = lib.func('CE_ReadCard', int, ['string', 'void *']);
+const CE_GetCardNo = lib.func('CE_GetCardNo', int, ['void *']);
 const CE_Beep = lib.func('CE_Beep', int, [int, int, int]);
-const CE_GetVersion = lib.func('CE_GetVersion', int, [pointer]);
+const CE_GetVersion = lib.func('CE_GetVersion', int, ['void *']);
 
 console.log('✓ DLL chargée avec succès');
 
