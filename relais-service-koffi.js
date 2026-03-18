@@ -25,25 +25,18 @@ const CONFIG = {
 
 // Charger la DLL avec koffi
 console.log('Chargement de CardEncoder.dll...');
-
-// CORRECTION: La syntaxe correcte pour koffi
 const lib = koffi.load('./CardEncoder.dll');
 
-// Définir les types si nécessaire
-const int = koffi.int;
-const bool = koffi.bool;
-const uint64 = koffi.uint64;
-const pointer = koffi.pointer(koffi.void);
-
-// Définir les fonctions de la DLL avec la syntaxe CORRECTE
-const CE_ConnectComm = lib.func('CE_ConnectComm', int, ['string']);
-const CE_DisconnectComm = lib.func('CE_DisconnectComm', int, []);
-const CE_InitCardEncoder = lib.func('CE_InitCardEncoder', int, ['string']);
-const CE_WriteCard = lib.func('CE_WriteCard', int, ['string', int, int, 'string', uint64, bool]);
-const CE_ReadCard = lib.func('CE_ReadCard', int, ['string', pointer]);
-const CE_GetCardNo = lib.func('CE_GetCardNo', int, [pointer]);
-const CE_Beep = lib.func('CE_Beep', int, [int, int, int]);
-const CE_GetVersion = lib.func('CE_GetVersion', int, [pointer]);
+// Définir les fonctions de la DLL avec des chaînes de caractères pour les types
+const CE_ConnectComm = lib.func('CE_ConnectComm', 'int', ['string']);
+const CE_DisconnectComm = lib.func('CE_DisconnectComm', 'int', []);
+const CE_InitCardEncoder = lib.func('CE_InitCardEncoder', 'int', ['string']);
+const CE_WriteCard = lib.func('CE_WriteCard', 'int', ['string', 'int', 'int', 'string', 'uint64', 'bool']);
+const CE_ReadCard = lib.func('CE_ReadCard', 'int', ['string', 'pointer']);
+const CE_GetCardNo = lib.func('CE_GetCardNo', 'int', ['pointer']);
+const CE_Beep = lib.func('CE_Beep', 'int', ['int', 'int', 'int']);
+const CE_GetVersion = lib.func('CE_GetVersion', 'int', ['pointer']);
+const CE_ClearCard = lib.func('CE_ClearCard', 'int', ['string']);
 
 console.log('✓ DLL chargée avec succès');
 
@@ -182,6 +175,18 @@ class EncoderService {
         return buffer.toString('utf8').replace(/\0/g, '');
     }
 
+    async clearCard(hotelInfo) {
+        console.log('Effacement de la carte...');
+        const result = CE_ClearCard(hotelInfo);
+
+        if (result !== 0) {
+            throw new Error(`Échec effacement carte (code: ${result})`);
+        }
+
+        console.log('✓ Carte effacée avec succès');
+        return true;
+    }
+
     beep(len, interval, count) {
         try {
             CE_Beep(len, interval, count);
@@ -305,6 +310,30 @@ app.post('/api/read-card', async (req, res) => {
     }
 });
 
+app.post('/api/clear-card', async (req, res) => {
+    try {
+        const hotelInfo = await hotelInfoManager.getValidHotelInfo();
+
+        await encoderService.connect();
+        await encoderService.initializeEncoder(hotelInfo);
+
+        await encoderService.clearCard(hotelInfo);
+
+        encoderService.disconnect();
+
+        res.json({
+            success: true,
+            message: 'Carte effacée avec succès'
+        });
+    } catch (error) {
+        encoderService.disconnect();
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 app.post('/api/get-card-number', async (req, res) => {
     try {
         await encoderService.connect();
@@ -411,15 +440,29 @@ app.listen(PORT, () => {
         try {
             await encoderService.connect();
             console.log('✓ Encodeur détecté');
+
+            const version = await encoderService.getVersion();
+            console.log('✓ Version:', version);
+
             encoderService.disconnect();
         } catch (error) {
             console.warn('⚠️ Encodeur non détecté:', error.message);
+            console.warn('   Vérifiez:');
+            console.warn('   - L\'encodeur est branché en USB');
+            console.warn(`   - Le port ${CONFIG.comPort} est correct`);
+            console.warn('   - Les drivers sont installés');
         }
     }, 2000);
 });
 
 // Gestion arrêt
 process.on('SIGINT', () => {
+    console.log('\nArrêt du service...');
+    encoderService.disconnect();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
     console.log('\nArrêt du service...');
     encoderService.disconnect();
     process.exit(0);
