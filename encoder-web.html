@@ -4,122 +4,251 @@
 <head>
     <title>Encoder des cartes TTlock</title>
     <style>
-        body {
-            font-family: Arial;
-            max-width: 800px;
-            margin: auto;
-            padding: 20px;
+        :root {
+            --bg: #f3f5f9;
+            --panel: #ffffff;
+            --text: #192133;
+            --muted: #5f6b85;
+            --primary: #255df5;
+            --primary-hover: #1c49c7;
+            --border: #dde3ef;
+            --shadow: 0 10px 25px rgba(25, 33, 51, 0.08);
+            --success-bg: #e9f8ee;
+            --success-text: #1c7c3f;
+            --error-bg: #fdecef;
+            --error-text: #a22a34;
+            --info-bg: #e9f0ff;
+            --info-text: #214aaf;
         }
 
-        .container {
-            border: 1px solid #ddd;
-            padding: 20px;
-            margin: 10px 0;
-            border-radius: 5px;
-        }
-
-        .success {
-            background: #d4edda;
-            color: #155724;
-            padding: 10px;
-            border-radius: 5px;
-        }
-
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 10px;
-            border-radius: 5px;
-        }
-
-        .info {
-            background: #d1ecf1;
-            color: #0c5460;
-            padding: 10px;
-            border-radius: 5px;
-        }
-
-        button {
-            padding: 10px 20px;
-            margin: 5px;
-            cursor: pointer;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-        }
-
-        button:disabled {
-            background: #ccc;
-        }
-
-        input,
-        textarea {
-            padding: 8px;
-            margin: 5px;
-            width: 100%;
+        * {
             box-sizing: border-box;
         }
 
+        body {
+            font-family: "Inter", Arial, sans-serif;
+            max-width: 960px;
+            margin: auto;
+            padding: 28px 20px 36px;
+            background: radial-gradient(circle at top right, #f8f9ff, var(--bg));
+            color: var(--text);
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 2rem;
+        }
+
+        .subtitle {
+            margin: 0 0 20px;
+            color: var(--muted);
+        }
+
+        .panel-grid {
+            display: grid;
+            gap: 14px;
+        }
+
+        .container {
+            border: 1px solid var(--border);
+            background: var(--panel);
+            padding: 18px;
+            margin: 0;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        h2 {
+            margin: 0 0 8px;
+            font-size: 1.15rem;
+        }
+
+        .section-hint {
+            margin: 0 0 14px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .success {
+            background: var(--success-bg);
+            color: var(--success-text);
+            border: 1px solid #ccefd8;
+        }
+
+        .error {
+            background: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid #f9d0d5;
+        }
+
+        .info {
+            background: var(--info-bg);
+            color: var(--info-text);
+            border: 1px solid #d0ddff;
+        }
+
+        .success,
+        .error,
+        .info {
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 0.95rem;
+        }
+
+        button {
+            padding: 10px 14px;
+            cursor: pointer;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.2s ease, transform 0.1s ease;
+        }
+
+        button:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            background: #9da9c0;
+            cursor: not-allowed;
+        }
+
+        input {
+            padding: 8px;
+            margin-top: 4px;
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+        }
+
+        input:focus {
+            outline: 2px solid #c6d5ff;
+            border-color: var(--primary);
+        }
+
+        form {
+            display: grid;
+            gap: 10px;
+        }
+
+        label {
+            display: block;
+            color: #2d3b59;
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        .result {
+            min-height: 28px;
+            margin-top: 10px;
+        }
+
+        pre {
+            background: #0f172a;
+            color: #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+            overflow-x: auto;
+            font-size: 0.82rem;
+        }
+
         .log {
-            background: #f4f4f4;
+            background: #0f172a;
+            color: #e2e8f0;
             padding: 10px;
-            height: 200px;
+            height: 240px;
             overflow-y: scroll;
             font-family: monospace;
+            border-radius: 10px;
+            white-space: pre-wrap;
+        }
+
+        @media (max-width: 700px) {
+            body {
+                padding: 18px 14px 24px;
+            }
+
+            .container {
+                padding: 14px;
+            }
         }
     </style>
 </head>
 
 <body>
     <h1>🔑 Encoder des cartes TTlock</h1>
+    <p class="subtitle">Interface de gestion pour lire, initialiser et encoder les cartes en quelques clics.</p>
 
-    <div class="container">
-        <h2>📊 État du service</h2>
-        <button onclick="checkStatus()">Vérifier le service</button>
-        <div id="status"></div>
-    </div>
+    <div class="panel-grid">
+        <div class="container">
+            <h2>📊 État du service</h2>
+            <p class="section-hint">Vérifiez la connexion de l'encodeur et l'état des ressources de l'hôtel.</p>
+            <div class="actions">
+                <button onclick="checkStatus()">Vérifier le service</button>
+            </div>
+            <div id="status" class="result"></div>
+        </div>
 
-    <div class="container">
-        <h2>📖 Lire une carte</h2>
-        <button onclick="readCard()">Lire la carte</button>
-        <button onclick="getCardNumber()">Obtenir le numéro</button>
-        <button onclick="clearCard()">Effacer la carte</button>
-        <button onclick="initCard()">Initialiser la carte</button>
-        <div id="readResult"></div>
-    </div>
+        <div class="container">
+            <h2>📖 Lire une carte</h2>
+            <p class="section-hint">Placez la carte sur l'encodeur puis lancez l'action souhaitée.</p>
+            <div class="actions">
+                <button onclick="readCard()">Lire la carte</button>
+                <button onclick="getCardNumber()">Obtenir le numéro</button>
+                <button onclick="clearCard()">Effacer la carte</button>
+                <button onclick="initCard()">Initialiser la carte</button>
+            </div>
+            <div id="readResult" class="result"></div>
+        </div>
 
-    <div class="container">
-        <h2>✏️ Encoder une carte</h2>
-        <form id="encodeForm">
-            <div>
-                <label>Numéro de chambre:</label>
-                <input type="number" id="roomNumber" value="101" required>
-            </div>
-            <div>
-                <label>MAC de la serrure (12 caractères):</label>
-                <input type="text" id="mac" value="001122334455" maxlength="12" required>
-            </div>
-            <div>
-                <label>Date d'expiration (optionnel):</label>
-                <input type="date" id="expiryDate">
-            </div>
-            <div>
-                <label>Bâtiment:</label>
-                <input type="number" id="buildingNo" value="1">
-            </div>
-            <div>
-                <label>Étage:</label>
-                <input type="number" id="floorNo" value="1">
-            </div>
-            <button type="button" onclick="encodeCard()">Encoder la carte</button>
-        </form>
-        <div id="encodeResult"></div>
-    </div>
+        <div class="container">
+            <h2>✏️ Encoder une carte</h2>
+            <p class="section-hint">Renseignez les champs, puis lancez l'encodage avec une carte prête à être écrite.</p>
+            <form id="encodeForm">
+                <div>
+                    <label for="roomNumber">Numéro de chambre</label>
+                    <input type="number" id="roomNumber" value="101" required>
+                </div>
+                <div>
+                    <label for="mac">MAC de la serrure (12 caractères)</label>
+                    <input type="text" id="mac" value="001122334455" maxlength="12" required>
+                </div>
+                <div>
+                    <label for="expiryDate">Date d'expiration (optionnel)</label>
+                    <input type="date" id="expiryDate">
+                </div>
+                <div>
+                    <label for="buildingNo">Bâtiment</label>
+                    <input type="number" id="buildingNo" value="1">
+                </div>
+                <div>
+                    <label for="floorNo">Étage</label>
+                    <input type="number" id="floorNo" value="1">
+                </div>
+                <button type="button" onclick="encodeCard()">Encoder la carte</button>
+            </form>
+            <div id="encodeResult" class="result"></div>
+        </div>
 
-    <div class="container">
-        <h2>📋 Journal des opérations</h2>
-        <div class="log" id="log"></div>
+        <div class="container">
+            <h2>📋 Journal des opérations</h2>
+            <p class="section-hint">Historique instantané des actions et des retours du service.</p>
+            <div class="log" id="log"></div>
+        </div>
     </div>
 
     <script>
@@ -180,7 +309,7 @@
                     // Afficher les informations
                     document.getElementById('readResult').innerHTML = `
                         <div class="success">✅ Carte lue avec succès !</div>
-                        <pre style="background:#f4f4f4; padding:10px">${JSON.stringify(cardInfo, null, 2)}</pre>
+                        <pre>${JSON.stringify(cardInfo, null, 2)}</pre>
                     `;
 
                     addLog(`✅ Carte lue: ${JSON.stringify(cardInfo)}`);
