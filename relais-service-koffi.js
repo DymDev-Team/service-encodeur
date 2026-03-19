@@ -24,6 +24,26 @@ const CONFIG = {
     pendingRequests: new Map()
 };
 
+const ENCODER_ERROR_HINTS = {
+    106: 'Carte non détectée, non compatible ou non préparée. Repositionnez la carte, puis essayez "Initialiser la carte" avant lecture/écriture.'
+};
+
+function parseEncoderErrorCode(message) {
+    const match = /\(code:\s*(-?\d+)\)/.exec(message || '');
+    return match ? Number(match[1]) : null;
+}
+
+function withEncoderHint(message) {
+    const code = parseEncoderErrorCode(message);
+    if (code === null) return message;
+
+    const hint = ENCODER_ERROR_HINTS[code];
+    if (!hint) return message;
+    if ((message || '').includes(hint)) return message;
+
+    return `${message} — ${hint}`;
+}
+
 // Charger la DLL avec koffi
 console.log('Chargement de CardEncoder.dll...');
 const lib = koffi.load('./CardEncoder.dll');
@@ -86,6 +106,29 @@ const hotelInfoManager = new HotelInfoManager();
 
 // Service de gestion de l'encodeur
 class EncoderService {
+    async retryCardOperation(operationName, operationFn, maxAttempts = 3, retryDelayMs = 700) {
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await operationFn();
+            } catch (error) {
+                lastError = error;
+                const code = parseEncoderErrorCode(error.message);
+                const shouldRetry = code === 106 && attempt < maxAttempts;
+
+                if (!shouldRetry) {
+                    throw new Error(withEncoderHint(error.message));
+                }
+
+                console.warn(`⚠️ ${operationName} - tentative ${attempt}/${maxAttempts} échouée (code 106), nouvelle tentative...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            }
+        }
+
+        throw new Error(withEncoderHint(lastError?.message || `${operationName} échoué`));
+    }
+
     async connect() {
         console.log(`Connexion à l'encodeur sur ${CONFIG.comPort}...`);
         const result = CE_ConnectComm(CONFIG.comPort);
@@ -133,19 +176,20 @@ class EncoderService {
 
     async writeCard(hotelInfo, cardData) {
         console.log(`Écriture carte pour chambre ${cardData.roomNumber}...`);
+        await this.retryCardOperation('Écriture carte', async () => {
+            const result = CE_WriteCard(
+                hotelInfo,
+                cardData.buildingNo || 0,
+                cardData.floorNo || 0,
+                cardData.mac || '000000000000',
+                BigInt(cardData.expiryTimestamp || 0),
+                cardData.allowLockOut || false
+            );
 
-        const result = CE_WriteCard(
-            hotelInfo,
-            cardData.buildingNo || 0,
-            cardData.floorNo || 0,
-            cardData.mac || '000000000000',
-            BigInt(cardData.expiryTimestamp || 0),
-            cardData.allowLockOut || false
-        );
-
-        if (result !== 0) {
-            throw new Error(`Échec écriture carte (code: ${result})`);
-        }
+            if (result !== 0) {
+                throw new Error(`Échec écriture carte (code: ${result})`);
+            }
+        });
 
         console.log('✓ Carte écrite avec succès');
         this.beep(200, 100, 2);
@@ -155,11 +199,13 @@ class EncoderService {
     async readCard(hotelInfo) {
         console.log('Lecture de la carte...');
         const buffer = Buffer.alloc(4096);
-        const result = CE_ReadCard(hotelInfo, buffer);
+        await this.retryCardOperation('Lecture carte', async () => {
+            const result = CE_ReadCard(hotelInfo, buffer);
 
-        if (result !== 0) {
-            throw new Error(`Échec lecture carte (code: ${result})`);
-        }
+            if (result !== 0) {
+                throw new Error(`Échec lecture carte (code: ${result})`);
+            }
+        });
 
         const dataStr = buffer.toString('utf8').replace(/\0/g, '');
         console.log('✓ Carte lue');
@@ -176,19 +222,29 @@ class EncoderService {
         const result = CE_GetCardNo(buffer);
 
         if (result !== 0) {
-            throw new Error(`Échec récupération numéro carte (code: ${result})`);
+            throw new Error(withEncoderHint(`Échec récupération numéro carte (code: ${result})`));
         }
 
-        return buffer.toString('utf8').replace(/\0/g, '');
+        const utf8Value = buffer.toString('utf8').replace(/\0/g, '').trim();
+        const isPrintable = utf8Value.length > 0 && /^[\x20-\x7E]+$/.test(utf8Value);
+        if (isPrintable) return utf8Value;
+
+        if (buffer.length >= 4) {
+            return buffer.readUInt32LE(0).toString();
+        }
+
+        return 'Numéro non lisible';
     }
 
     async clearCard(hotelInfo) {
         console.log('Effacement de la carte...');
-        const result = CE_ClearCard(hotelInfo);
+        await this.retryCardOperation('Effacement carte', async () => {
+            const result = CE_ClearCard(hotelInfo);
 
-        if (result !== 0) {
-            throw new Error(`Échec effacement carte (code: ${result})`);
-        }
+            if (result !== 0) {
+                throw new Error(`Échec effacement carte (code: ${result})`);
+            }
+        });
 
         console.log('✓ Carte effacée avec succès');
         return true;
@@ -398,7 +454,9 @@ app.post('/api/init-card', async (req, res) => {
 // POST /api/get-card-number
 app.post('/api/get-card-number', async (req, res) => {
     try {
+        const hotelInfo = await hotelInfoManager.getValidHotelInfo();
         await encoderService.connect();
+        await encoderService.initializeEncoder(hotelInfo);
         const cardNumber = await encoderService.getCardNumber();
         encoderService.disconnect();
 
@@ -410,7 +468,7 @@ app.post('/api/get-card-number', async (req, res) => {
         encoderService.disconnect();
         res.status(500).json({
             success: false,
-            error: error.message
+            error: withEncoderHint(error.message)
         });
     }
 });
