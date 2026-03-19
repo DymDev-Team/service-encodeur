@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Encodeur TTlock</title>
+</head>
+
+<body>
+    <h1>Test Encodeur de Cartes</h1>
+
+    <button onclick="readCard()">📖 Lire la carte</button>
+    <button onclick="getCardNumber()">🔢 Numéro de carte</button>
+    <button onclick="clearCard()">🗑️ Effacer carte</button>
+
+    <div id="result" style="margin-top: 20px; padding: 10px; background: #f0f0f0;"></div>
+
+    <script>
+        async function readCard() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Lecture en cours... Placez la carte sur l\'encodeur';
+
+            try {
+                const response = await fetch('http://localhost:3000/api/read-card', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = '<pre style="background: #d4edda; padding: 10px;">' +
+                        JSON.stringify(data.cardData, null, 2) + '</pre>';
+                } else {
+                    resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                        data.error + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                    error.message + '</div>';
+            }
+        }
+
+        async function getCardNumber() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Lecture du numéro...';
+
+            try {
+                const response = await fetch('http://localhost:3000/api/get-card-number', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = '<div style="background: #d4edda; padding: 10px;">✅ Numéro: ' +
+                        data.cardNumber + '</div>';
+                } else {
+                    resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                        data.error + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                    error.message + '</div>';
+            }
+        }
+
+        async function clearCard() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Effacement en cours... Placez la carte sur l\'encodeur';
+
+            try {
+                const response = await fetch('http://localhost:3000/api/clear-card', {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    resultDiv.innerHTML = '<div style="background: #d4edda; padding: 10px;">✅ ' +
+                        data.message + '</div>';
+                } else {
+                    resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                        data.error + '</div>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div style="background: #f8d7da; padding: 10px;">❌ Erreur: ' +
+                    error.message + '</div>';
+            }
+        }
+    </script>
+</body>
+
+</html>

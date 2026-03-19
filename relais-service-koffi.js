@@ -425,6 +425,28 @@ setInterval(async () => {
     }
 }, 9 * 60 * 1000);
 
+// Route racine pour tester
+app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head><title>Service Encodeur TTlock</title></head>
+            <body>
+                <h1>✅ Service Encodeur TTlock actif</h1>
+                <p>Le service tourne sur le port ${PORT}</p>
+                <h2>Routes disponibles :</h2>
+                <ul>
+                    <li><a href="/api/status">GET /api/status</a> - État du service</li>
+                    <li>POST /api/read-card - Lire une carte</li>
+                    <li>POST /api/encode-card - Encoder une carte</li>
+                    <li>POST /api/get-card-number - Obtenir numéro carte</li>
+                    <li>POST /api/clear-card - Effacer carte</li>
+                    <li>POST /api/refresh-hotel-info - Rafraîchir hotelInfo</li>
+                </ul>
+            </body>
+        </html>
+    `);
+});
+
 // Démarrer le serveur
 app.listen(PORT, () => {
     console.log(`
