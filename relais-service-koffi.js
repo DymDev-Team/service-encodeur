@@ -11,6 +11,7 @@ const PORT = 3000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(__dirname)); // Pour servir les fichiers HTML
 
 // Configuration
 const CONFIG = {
@@ -27,18 +28,17 @@ const CONFIG = {
 console.log('Chargement de CardEncoder.dll...');
 const lib = koffi.load('./CardEncoder.dll');
 
-// Déclaration des symboles exportés par la DLL
-// (équivalent aux anciennes définitions ffi, mais via Koffi)
+// Déclaration des fonctions de la DLL
 const CE_ConnectComm = lib.func('int CE_ConnectComm(str)');
 const CE_DisconnectComm = lib.func('int CE_DisconnectComm()');
 const CE_InitCardEncoder = lib.func('int CE_InitCardEncoder(str)');
+const CE_InitCard = lib.func('int CE_InitCard(str)');
 const CE_WriteCard = lib.func('int CE_WriteCard(str, int, int, str, int64, bool)');
 const CE_ReadCard = lib.func('int CE_ReadCard(str, void *)');
 const CE_GetCardNo = lib.func('int CE_GetCardNo(void *)');
 const CE_ClearCard = lib.func('int CE_ClearCard(str)');
 const CE_Beep = lib.func('int CE_Beep(int, int, int)');
 const CE_GetVersion = lib.func('int CE_GetVersion(void *)');
-
 
 console.log('✓ DLL chargée avec succès');
 
@@ -88,7 +88,6 @@ const hotelInfoManager = new HotelInfoManager();
 class EncoderService {
     async connect() {
         console.log(`Connexion à l'encodeur sur ${CONFIG.comPort}...`);
-
         const result = CE_ConnectComm(CONFIG.comPort);
 
         if (result !== 0) {
@@ -120,6 +119,18 @@ class EncoderService {
         return true;
     }
 
+    async initCard(hotelInfo) {
+        console.log('Initialisation de la carte...');
+        const result = CE_InitCard(hotelInfo);
+
+        if (result !== 0) {
+            throw new Error(`Échec initialisation carte (code: ${result})`);
+        }
+
+        console.log('✓ Carte initialisée avec succès');
+        return true;
+    }
+
     async writeCard(hotelInfo, cardData) {
         console.log(`Écriture carte pour chambre ${cardData.roomNumber}...`);
 
@@ -137,17 +148,12 @@ class EncoderService {
         }
 
         console.log('✓ Carte écrite avec succès');
-
-        // Bip de confirmation
         this.beep(200, 100, 2);
-
         return true;
     }
 
     async readCard(hotelInfo) {
         console.log('Lecture de la carte...');
-
-        // Buffer pour recevoir les données
         const buffer = Buffer.alloc(4096);
         const result = CE_ReadCard(hotelInfo, buffer);
 
@@ -155,7 +161,6 @@ class EncoderService {
             throw new Error(`Échec lecture carte (code: ${result})`);
         }
 
-        // Convertir le buffer en string et parser le JSON
         const dataStr = buffer.toString('utf8').replace(/\0/g, '');
         console.log('✓ Carte lue');
 
@@ -193,7 +198,7 @@ class EncoderService {
         try {
             CE_Beep(len, interval, count);
         } catch (e) {
-            // Ignorer les erreurs de bip
+            // Ignorer
         }
     }
 
@@ -216,7 +221,33 @@ class EncoderService {
 
 const encoderService = new EncoderService();
 
-// Routes API
+// ==================== ROUTES API ====================
+
+// Route racine
+app.get('/', (req, res) => {
+    res.send(`
+        <html>
+            <head><title>Service Encodeur TTlock</title></head>
+            <body style="font-family:Arial;max-width:800px;margin:auto;padding:20px">
+                <h1>✅ Service Encodeur TTlock actif</h1>
+                <p>Le service tourne sur le port ${PORT}</p>
+                <h2>Routes disponibles :</h2>
+                <ul>
+                    <li><a href="/api/status">GET /api/status</a> - État du service</li>
+                    <li>POST /api/read-card - Lire une carte</li>
+                    <li>POST /api/encode-card - Encoder une carte</li>
+                    <li>POST /api/get-card-number - Obtenir numéro carte</li>
+                    <li>POST /api/clear-card - Effacer carte</li>
+                    <li>POST /api/init-card - Initialiser carte</li>
+                    <li>POST /api/refresh-hotel-info - Rafraîchir hotelInfo</li>
+                </ul>
+                <p><a href="/encoder-web.html">Accéder à l'interface web</a></p>
+            </body>
+        </html>
+    `);
+});
+
+// GET /api/status
 app.get('/api/status', async (req, res) => {
     try {
         let version = { error: 'Non disponible' };
@@ -245,6 +276,7 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
+// POST /api/encode-card
 app.post('/api/encode-card', async (req, res) => {
     const requestId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const { roomNumber, mac, expiryDate, buildingNo = 1, floorNo } = req.body;
@@ -274,10 +306,10 @@ app.post('/api/encode-card', async (req, res) => {
         instructions: 'Placez la carte sur l\'encodeur'
     });
 
-    // Traiter la demande immédiatement
     processEncodingRequest(requestId).catch(console.error);
 });
 
+// GET /api/status/:requestId
 app.get('/api/status/:requestId', (req, res) => {
     const request = CONFIG.pendingRequests.get(req.params.requestId);
 
@@ -288,6 +320,7 @@ app.get('/api/status/:requestId', (req, res) => {
     res.json(request);
 });
 
+// POST /api/read-card
 app.post('/api/read-card', async (req, res) => {
     try {
         const hotelInfo = await hotelInfoManager.getValidHotelInfo();
@@ -312,6 +345,7 @@ app.post('/api/read-card', async (req, res) => {
     }
 });
 
+// POST /api/clear-card
 app.post('/api/clear-card', async (req, res) => {
     try {
         const hotelInfo = await hotelInfoManager.getValidHotelInfo();
@@ -336,6 +370,32 @@ app.post('/api/clear-card', async (req, res) => {
     }
 });
 
+// POST /api/init-card
+app.post('/api/init-card', async (req, res) => {
+    try {
+        const hotelInfo = await hotelInfoManager.getValidHotelInfo();
+
+        await encoderService.connect();
+        await encoderService.initializeEncoder(hotelInfo);
+
+        await encoderService.initCard(hotelInfo);
+
+        encoderService.disconnect();
+
+        res.json({
+            success: true,
+            message: 'Carte initialisée avec succès'
+        });
+    } catch (error) {
+        encoderService.disconnect();
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// POST /api/get-card-number
 app.post('/api/get-card-number', async (req, res) => {
     try {
         await encoderService.connect();
@@ -355,6 +415,7 @@ app.post('/api/get-card-number', async (req, res) => {
     }
 });
 
+// POST /api/refresh-hotel-info
 app.post('/api/refresh-hotel-info', async (req, res) => {
     try {
         const hotelInfo = await hotelInfoManager.refreshHotelInfo();
@@ -370,6 +431,7 @@ app.post('/api/refresh-hotel-info', async (req, res) => {
     }
 });
 
+// Traitement des demandes d'encodage
 async function processEncodingRequest(requestId) {
     const request = CONFIG.pendingRequests.get(requestId);
     if (!request) return;
@@ -424,28 +486,6 @@ setInterval(async () => {
         console.error('Échec rafraîchissement automatique:', error.message);
     }
 }, 9 * 60 * 1000);
-
-// Route racine pour tester
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <head><title>Service Encodeur TTlock</title></head>
-            <body>
-                <h1>✅ Service Encodeur TTlock actif</h1>
-                <p>Le service tourne sur le port ${PORT}</p>
-                <h2>Routes disponibles :</h2>
-                <ul>
-                    <li><a href="/api/status">GET /api/status</a> - État du service</li>
-                    <li>POST /api/read-card - Lire une carte</li>
-                    <li>POST /api/encode-card - Encoder une carte</li>
-                    <li>POST /api/get-card-number - Obtenir numéro carte</li>
-                    <li>POST /api/clear-card - Effacer carte</li>
-                    <li>POST /api/refresh-hotel-info - Rafraîchir hotelInfo</li>
-                </ul>
-            </body>
-        </html>
-    `);
-});
 
 // Démarrer le serveur
 app.listen(PORT, () => {
