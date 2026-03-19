@@ -466,8 +466,8 @@
                         document.getElementById('encodeResult').innerHTML = `
                             <div class="success">
                                 ✅ Encodage réussi !<br>
-                                Terminé à: ${new Date(status.completedAt).toLocaleTimeString()}<br>
-                                Données écrites: <pre>${JSON.stringify(status.cardData, null, 2)}</pre>
+                                Toutes les informations de l'encodage :<br>
+                                <pre>${JSON.stringify(status, null, 2)}</pre>
                             </div>
                         `;
                         addLog(`✅ Encodage réussi pour chambre ${status.roomNumber}`);
