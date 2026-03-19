@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Encoder des cartes TTlock</title>
+    <style>
+        body {
+            font-family: Arial;
+            max-width: 800px;
+            margin: auto;
+            padding: 20px;
+        }
+
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+
+        button:disabled {
+            background: #ccc;
+        }
+
+        input,
+        textarea {
+            padding: 8px;
+            margin: 5px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .log {
+            background: #f4f4f4;
+            padding: 10px;
+            height: 200px;
+            overflow-y: scroll;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔑 Encoder des cartes TTlock</h1>
+
+    <div class="container">
+        <h2>📊 État du service</h2>
+        <button onclick="checkStatus()">Vérifier le service</button>
+        <div id="status"></div>
+    </div>
+
+    <div class="container">
+        <h2>📖 Lire une carte</h2>
+        <button onclick="readCard()">Lire la carte</button>
+        <button onclick="getCardNumber()">Obtenir le numéro</button>
+        <button onclick="clearCard()">Effacer la carte</button>
+        <button onclick="initCard()">Initialiser la carte</button>
+        <div id="readResult"></div>
+    </div>
+
+    <div class="container">
+        <h2>✏️ Encoder une carte</h2>
+        <form id="encodeForm">
+            <div>
+                <label>Numéro de chambre:</label>
+                <input type="number" id="roomNumber" value="101" required>
+            </div>
+            <div>
+                <label>MAC de la serrure (12 caractères):</label>
+                <input type="text" id="mac" value="001122334455" maxlength="12" required>
+            </div>
+            <div>
+                <label>Date d'expiration (optionnel):</label>
+                <input type="date" id="expiryDate">
+            </div>
+            <div>
+                <label>Bâtiment:</label>
+                <input type="number" id="buildingNo" value="1">
+            </div>
+            <div>
+                <label>Étage:</label>
+                <input type="number" id="floorNo" value="1">
+            </div>
+            <button type="button" onclick="encodeCard()">Encoder la carte</button>
+        </form>
+        <div id="encodeResult"></div>
+    </div>
+
+    <div class="container">
+        <h2>📋 Journal des opérations</h2>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000';
+
+        function addLog(message, type = 'info') {
+            const log = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML += `[${time}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // 1. VÉRIFIER LE SERVICE
+        async function checkStatus() {
+            addLog('🔍 Vérification du service...');
+            try {
+                const response = await fetch(`${API_URL}/api/status`);
+                const data = await response.json();
+
+                let html = '';
+                if (data.encoderConnected) {
+                    html += `<div class="success">✅ Encodeur connecté</div>`;
+                } else {
+                    html += `<div class="error">❌ Encodeur non connecté</div>`;
+                }
+
+                if (data.hotelInfo.present) {
+                    html += `<div class="success">✅ hotelInfo présent (expire: ${data.hotelInfo.expiry})</div>`;
+                } else {
+                    html += `<div class="error">❌ hotelInfo manquant</div>`;
+                }
+
+                html += `<div class="info">📊 Demandes en attente: ${data.pendingRequests}</div>`;
+
+                document.getElementById('status').innerHTML = html;
+                addLog(`✅ Service OK - Encodeur connecté: ${data.encoderConnected}`);
+            } catch (error) {
+                document.getElementById('status').innerHTML = `<div class="error">❌ Erreur: ${error.message}</div>`;
+                addLog(`❌ Erreur service: ${error.message}`);
+            }
+        }
+
+        // 2. LIRE UNE CARTE (récupérer les informations)
+        async function readCard() {
+            addLog('📖 Lecture de la carte... Placez la carte sur l\'encodeur');
+            document.getElementById('readResult').innerHTML = '<div class="info">⏳ Lecture en cours...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/read-card`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    // ✅ VOICI LES INFORMATIONS RÉCUPÉRÉES DE LA CARTE
+                    const cardInfo = data.cardData;
+
+                    // Afficher les informations
+                    document.getElementById('readResult').innerHTML = `
+                        <div class="success">✅ Carte lue avec succès !</div>
+                        <pre style="background:#f4f4f4; padding:10px">${JSON.stringify(cardInfo, null, 2)}</pre>
+                    `;
+
+                    addLog(`✅ Carte lue: ${JSON.stringify(cardInfo)}`);
+
+                    // Vous pouvez maintenant utiliser ces informations
+                    // Par exemple, les afficher dans le formulaire
+                    if (cardInfo.buildNo) document.getElementById('buildingNo').value = cardInfo.buildNo;
+                    if (cardInfo.floorNo) document.getElementById('floorNo').value = cardInfo.floorNo;
+                    if (cardInfo.mac) document.getElementById('mac').value = cardInfo.mac;
+
+                } else {
+                    document.getElementById('readResult').innerHTML = `<div class="error">❌ ${data.error}</div>`;
+                    addLog(`❌ Erreur lecture: ${data.error}`);
+                }
+            } catch (error) {
+                document.getElementById('readResult').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+                addLog(`❌ Erreur: ${error.message}`);
+            }
+        }
+
+        // 3. OBTENIR LE NUMÉRO DE CARTE
+        async function getCardNumber() {
+            addLog('🔢 Récupération du numéro de carte...');
+
+            try {
+                const response = await fetch(`${API_URL}/api/get-card-number`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('readResult').innerHTML = `
+                        <div class="success">✅ Numéro de carte: ${data.cardNumber}</div>
+                    `;
+                    addLog(`✅ Numéro carte: ${data.cardNumber}`);
+                } else {
+                    document.getElementById('readResult').innerHTML = `<div class="error">❌ ${data.error}</div>`;
+                    addLog(`❌ Erreur: ${data.error}`);
+                }
+            } catch (error) {
+                document.getElementById('readResult').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+                addLog(`❌ Erreur: ${error.message}`);
+            }
+        }
+
+        // 4. EFFACER UNE CARTE
+        async function clearCard() {
+            addLog('🗑️ Effacement de la carte...');
+            document.getElementById('readResult').innerHTML = '<div class="info">⏳ Effacement en cours...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/clear-card`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('readResult').innerHTML = `<div class="success">✅ ${data.message}</div>`;
+                    addLog(`✅ Carte effacée`);
+                } else {
+                    document.getElementById('readResult').innerHTML = `<div class="error">❌ ${data.error}</div>`;
+                    addLog(`❌ Erreur effacement: ${data.error}`);
+                }
+            } catch (error) {
+                document.getElementById('readResult').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+                addLog(`❌ Erreur: ${error.message}`);
+            }
+        }
+
+        // 5. INITIALISER UNE CARTE
+        async function initCard() {
+            addLog('🔄 Initialisation de la carte...');
+            document.getElementById('readResult').innerHTML = '<div class="info">⏳ Initialisation en cours...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/init-card`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('readResult').innerHTML = `<div class="success">✅ ${data.message}</div>`;
+                    addLog(`✅ Carte initialisée`);
+                } else {
+                    document.getElementById('readResult').innerHTML = `<div class="error">❌ ${data.error}</div>`;
+                    addLog(`❌ Erreur initialisation: ${data.error}`);
+                }
+            } catch (error) {
+                document.getElementById('readResult').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+                addLog(`❌ Erreur: ${error.message}`);
+            }
+        }
+
+        // 6. ENCODER UNE CARTE (INJECTER LES INFORMATIONS)
+        async function encodeCard() {
+            // Récupérer les informations du formulaire
+            const cardData = {
+                roomNumber: parseInt(document.getElementById('roomNumber').value),
+                mac: document.getElementById('mac').value,
+                buildingNo: parseInt(document.getElementById('buildingNo').value),
+                floorNo: parseInt(document.getElementById('floorNo').value)
+            };
+
+            const expiryDate = document.getElementById('expiryDate').value;
+            if (expiryDate) {
+                cardData.expiryDate = expiryDate;
+            }
+
+            addLog(`📝 Encodage de la carte avec les données: ${JSON.stringify(cardData)}`);
+            document.getElementById('encodeResult').innerHTML = '<div class="info">⏳ Encodage en cours... Placez la carte sur l\'encodeur</div>';
+
+            try {
+                // ENVOYER LES INFORMATIONS AU SERVICE POUR INJECTION SUR LA CARTE
+                const response = await fetch(`${API_URL}/api/encode-card`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cardData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('encodeResult').innerHTML = `
+                        <div class="success">
+                            ✅ Demande envoyée !<br>
+                            ID: ${result.requestId}<br>
+                            ${result.instructions}
+                        </div>
+                    `;
+
+                    addLog(`✅ Demande envoyée, ID: ${result.requestId}`);
+
+                    // Surveiller le statut
+                    pollEncodingStatus(result.requestId);
+                } else {
+                    document.getElementById('encodeResult').innerHTML = `<div class="error">❌ ${result.error}</div>`;
+                    addLog(`❌ Erreur: ${result.error}`);
+                }
+            } catch (error) {
+                document.getElementById('encodeResult').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+                addLog(`❌ Erreur: ${error.message}`);
+            }
+        }
+
+        // 7. SURVEILLER LE STATUT DE L'ENCODAGE
+        async function pollEncodingStatus(requestId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/status/${requestId}`);
+                    const status = await response.json();
+
+                    if (status.status === 'success') {
+                        document.getElementById('encodeResult').innerHTML = `
+                            <div class="success">
+                                ✅ Encodage réussi !<br>
+                                Terminé à: ${new Date(status.completedAt).toLocaleTimeString()}<br>
+                                Données écrites: <pre>${JSON.stringify(status.cardData, null, 2)}</pre>
+                            </div>
+                        `;
+                        addLog(`✅ Encodage réussi pour chambre ${status.roomNumber}`);
+                        clearInterval(interval);
+
+                    } else if (status.status === 'error') {
+                        document.getElementById('encodeResult').innerHTML = `
+                            <div class="error">❌ Échec: ${status.error}</div>
+                        `;
+                        addLog(`❌ Échec encodage: ${status.error}`);
+                        clearInterval(interval);
+
+                    } else {
+                        addLog(`⏳ Statut: ${status.status}...`);
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                }
+            }, 2000);
+        }
+
+        // Vérifier le statut au chargement
+        checkStatus();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <button onclick="refreshHotelInfo()">🔄 Initialiser hotelInfo</button>
+    <button onclick="checkStatus()">📊 Vérifier statut</button>
+    <div id="result"></div>
+
+    <script>
+        async function refreshHotelInfo() {
+            const res = await fetch('http://localhost:3000/api/refresh-hotel-info', {
+                method: 'POST'
+            });
+            const data = await res.json();
+            document.getElementById('result').innerHTML = 
+                '<pre style="background:#d4edda; padding:10px">' + 
+                JSON.stringify(data, null, 2) + '</pre>';
+        }
+
+        async function checkStatus() {
+            const res = await fetch('http://localhost:3000/api/status');
+            const data = await res.json();
+            document.getElementById('result').innerHTML = 
+                '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        }
+    </script>
+</body>
+</html>
