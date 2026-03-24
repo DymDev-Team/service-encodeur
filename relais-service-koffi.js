@@ -17,15 +17,32 @@ app.use(express.static(__dirname)); // Pour servir les fichiers HTML
 const CONFIG = {
     ttlockApi: process.env.TTLOCK_API || 'https://euapi.ttlock.com/v3',
     clientId: process.env.CLIENT_ID || '5e53c28e38d94c0d99d0f83fe9e9fe3a',
-    clientSecret: process.env.CLIENT_SECRET || 'd441734ad779dfea59d09663127bfd46',
+    clientSecret: process.env.CLIENT_SECRET || '85d76ce1294849b60b9664ccf332b42d',
     comPort: process.env.COM_PORT || 'COM3',
     currentHotelInfo: null,
     hotelInfoExpiry: null,
     pendingRequests: new Map()
 };
 
+// Fonction utilitaire pour le fuseau horaire
+function getTimezoneOffset() {
+    const date = new Date();
+    const isDST = date.getMonth() > 2 && date.getMonth() < 10;
+    return isDST ? 7200 : 3600; // GMT+2 = 7200s, GMT+1 = 3600s
+}
+
+// Gestion des erreurs
 const ENCODER_ERROR_HINTS = {
-    106: 'Carte non détectée, non compatible ou non préparée. Repositionnez la carte, puis essayez "Initialiser la carte" avant lecture/écriture.'
+    106: 'Carte non détectée, non compatible ou non préparée. Repositionnez la carte, puis essayez "Initialiser la carte" avant lecture/écriture.',
+    1: 'Échec de connexion à l\'encodeur. Vérifiez le câble USB et le port COM.',
+    2: 'Paramètre invalide. Vérifiez les données envoyées.',
+    3: 'Erreur de communication (écriture). Vérifiez la connexion.',
+    4: 'Erreur de communication (lecture). Vérifiez la connexion.',
+    5: 'Erreur de commande. L\'encodeur a retourné une erreur.',
+    13: 'HotelInfo expiré ou invalide. Rafraîchissez hotelInfo.',
+    201: 'Échec de configuration de la clé.',
+    202: 'Échec de configuration de la clé carte.',
+    203: 'Échec de configuration des informations hôtel.'
 };
 
 function parseEncoderErrorCode(message) {
@@ -48,17 +65,43 @@ function withEncoderHint(message) {
 console.log('Chargement de CardEncoder.dll...');
 const lib = koffi.load('./CardEncoder.dll');
 
-// Déclaration des fonctions de la DLL
-const CE_ConnectComm = lib.func('int CE_ConnectComm(str)');
-const CE_DisconnectComm = lib.func('int CE_DisconnectComm()');
-const CE_InitCardEncoder = lib.func('int CE_InitCardEncoder(str)');
-const CE_InitCard = lib.func('int CE_InitCard(str)');
-const CE_WriteCard = lib.func('int CE_WriteCard(str, int, int, str, int64, bool)');
-const CE_ReadCard = lib.func('int CE_ReadCard(str, void *)');
-const CE_GetCardNo = lib.func('int CE_GetCardNo(void *)');
-const CE_ClearCard = lib.func('int CE_ClearCard(str)');
-const CE_Beep = lib.func('int CE_Beep(int, int, int)');
-const CE_GetVersion = lib.func('int CE_GetVersion(void *)');
+// Déclaration des fonctions de la DLL (syntaxe koffi correcte)
+const CE_ConnectComm = lib.func('CE_ConnectComm', 'int', ['string']);
+const CE_DisconnectComm = lib.func('CE_DisconnectComm', 'int', []);
+const CE_InitCardEncoder = lib.func('CE_InitCardEncoder', 'int', ['string']);
+const CE_InitCard = lib.func('CE_InitCard', 'int', ['string']);
+const CE_WriteCard = lib.func('CE_WriteCard', 'int', ['string', 'int', 'int', 'string', 'int64', 'bool']);
+const CE_ReadCard = lib.func('CE_ReadCard', 'int', ['string', 'void *']);
+const CE_GetCardNo = lib.func('CE_GetCardNo', 'int', ['void *']);
+const CE_ClearCard = lib.func('CE_ClearCard', 'int', ['string']);
+const CE_Beep = lib.func('CE_Beep', 'int', ['int', 'int', 'int']);
+const CE_GetVersion = lib.func('CE_GetVersion', 'int', ['void *']);
+
+// Version V2 avec support timeMark (si disponible dans la DLL)
+// Si cette fonction n'existe pas, la déclaration échouera silencieusement
+let CE_WriteCard_V2 = null;
+try {
+    CE_WriteCard_V2 = lib.func('CE_WriteCard_V2', 'int', [
+        'string',   // hotelInfo
+        'uchar',    // timeMark
+        'int',      // buildingNo
+        'int',      // floorNo
+        'string',   // mac
+        'int64',    // startDate
+        'int64',    // endDate
+        'bool',     // allowLockOut
+        'int',      // timezoneRawOffset
+        'bool',     // isCycle
+        'uchar',    // cycleType
+        'int',      // cycleCount
+        'void *',   // cycleDays
+        'uint',     // startTime
+        'uint'      // endTime
+    ]);
+    console.log('✓ Fonction CE_WriteCard_V2 détectée (mode strict disponible)');
+} catch (e) {
+    console.log('⚠️ Fonction CE_WriteCard_V2 non disponible, utilisation du mode standard');
+}
 
 console.log('✓ DLL chargée avec succès');
 
@@ -176,22 +219,66 @@ class EncoderService {
 
     async writeCard(hotelInfo, cardData) {
         console.log(`Écriture carte pour chambre ${cardData.roomNumber}...`);
-        await this.retryCardOperation('Écriture carte', async () => {
-            const result = CE_WriteCard(
-                hotelInfo,
-                cardData.buildingNo || 0,
-                cardData.floorNo || 0,
-                cardData.mac || '000000000000',
-                BigInt(cardData.expiryTimestamp || 0),
-                cardData.allowLockOut || false
-            );
 
-            if (result !== 0) {
-                throw new Error(`Échec écriture carte (code: ${result})`);
-            }
-        });
+        const startTimestamp = cardData.startTimestamp || Math.floor(Date.now() / 1000);
+        const expiryTimestamp = cardData.expiryTimestamp || 0;
 
-        console.log('✓ Carte écrite avec succès');
+        // Si la fonction V2 est disponible, utiliser le mode strict
+        if (CE_WriteCard_V2) {
+            const timeMark = 0; // 0 = Enforcement strict
+            const timezoneRawOffset = getTimezoneOffset();
+
+            console.log(`   Période de validité: ${new Date(startTimestamp * 1000).toLocaleString()} → ${new Date(expiryTimestamp * 1000).toLocaleString()}`);
+            console.log(`   Mode: STRICT (timeMark=0, timezone=${timezoneRawOffset}s)`);
+
+            await this.retryCardOperation('Écriture carte', async () => {
+                const result = CE_WriteCard_V2(
+                    hotelInfo,
+                    timeMark,
+                    cardData.buildingNo || 0,
+                    cardData.floorNo || 0,
+                    cardData.mac || '000000000000',
+                    BigInt(startTimestamp),
+                    BigInt(expiryTimestamp),
+                    cardData.allowLockOut || false,
+                    timezoneRawOffset,
+                    false,  // isCycle
+                    0,      // cycleType
+                    0,      // cycleCount
+                    null,   // cycleDays
+                    0,      // startTime
+                    0       // endTime
+                );
+
+                if (result !== 0) {
+                    throw new Error(`Échec écriture carte (code: ${result})`);
+                }
+            });
+
+            console.log('✓ Carte écrite avec succès (mode strict - enforcement)');
+        } else {
+            // Mode standard sans timeMark
+            console.log(`   Date d'expiration: ${new Date(expiryTimestamp * 1000).toLocaleString()}`);
+            console.log(`   Mode: STANDARD (expiration non stricte)`);
+
+            await this.retryCardOperation('Écriture carte', async () => {
+                const result = CE_WriteCard(
+                    hotelInfo,
+                    cardData.buildingNo || 0,
+                    cardData.floorNo || 0,
+                    cardData.mac || '000000000000',
+                    BigInt(expiryTimestamp),
+                    cardData.allowLockOut || false
+                );
+
+                if (result !== 0) {
+                    throw new Error(`Échec écriture carte (code: ${result})`);
+                }
+            });
+
+            console.log('✓ Carte écrite avec succès (mode standard)');
+        }
+
         this.beep(200, 100, 2);
         return true;
     }
@@ -321,7 +408,8 @@ app.get('/api/status', async (req, res) => {
                 expiry: CONFIG.hotelInfoExpiry ? new Date(CONFIG.hotelInfoExpiry).toLocaleString() : 'N/A'
             },
             version: version,
-            pendingRequests: CONFIG.pendingRequests.size
+            pendingRequests: CONFIG.pendingRequests.size,
+            strictMode: CE_WriteCard_V2 !== null
         });
     } catch (error) {
         res.json({
@@ -335,10 +423,25 @@ app.get('/api/status', async (req, res) => {
 // POST /api/encode-card
 app.post('/api/encode-card', async (req, res) => {
     const requestId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    const { roomNumber, mac, expiryDate, buildingNo = 1, floorNo } = req.body;
+    const { roomNumber, mac, startDate, expiryDate, buildingNo = 1, floorNo } = req.body;
 
     if (!roomNumber) {
         return res.status(400).json({ error: 'roomNumber requis' });
+    }
+
+    // Calculer les timestamps
+    let startTimestamp = Math.floor(Date.now() / 1000);
+    if (startDate) {
+        startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+    }
+
+    let expiryTimestamp = 0;
+    if (expiryDate) {
+        expiryTimestamp = Math.floor(new Date(expiryDate).getTime() / 1000);
+    }
+
+    if (!expiryTimestamp) {
+        return res.status(400).json({ error: 'expiryDate requis' });
     }
 
     CONFIG.pendingRequests.set(requestId, {
@@ -347,13 +450,16 @@ app.post('/api/encode-card', async (req, res) => {
         mac: mac || '000000000000',
         buildingNo,
         floorNo: floorNo || roomNumber,
-        expiryTimestamp: expiryDate ? Math.floor(new Date(expiryDate).getTime() / 1000) : 0,
+        startTimestamp: startTimestamp,
+        expiryTimestamp: expiryTimestamp,
         allowLockOut: true,
         status: 'pending',
         createdAt: new Date()
     });
 
     console.log(`📝 Demande d'encodage reçue: Chambre ${roomNumber} (ID: ${requestId})`);
+    console.log(`   Validité: ${new Date(startTimestamp * 1000).toLocaleString()} → ${new Date(expiryTimestamp * 1000).toLocaleString()}`);
+    console.log(`   Mode: ${CE_WriteCard_V2 ? 'STRICT (timeMark=0)' : 'STANDARD'}`);
 
     res.json({
         success: true,
@@ -507,6 +613,7 @@ async function processEncodingRequest(requestId) {
             mac: request.mac,
             buildingNo: request.buildingNo,
             floorNo: request.floorNo,
+            startTimestamp: request.startTimestamp,
             expiryTimestamp: request.expiryTimestamp,
             allowLockOut: request.allowLockOut
         });
@@ -553,7 +660,7 @@ app.listen(PORT, () => {
 ╠══════════════════════════════════════════════════════════╣
 ║  • URL: http://localhost:${PORT}                          ║
 ║  • Port COM: ${CONFIG.comPort}                                   ║
-║  • Moteur: Koffi (pas de compilation native)            ║
+║  • Mode strict: ${CE_WriteCard_V2 ? 'ACTIVÉ ✓' : 'DÉSACTIVÉ (V2 non disponible)'} ║
 ╚══════════════════════════════════════════════════════════╝
     `);
 
