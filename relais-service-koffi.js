@@ -661,11 +661,21 @@ async function processEncodingRequest(requestId) {
 
         const cardData = await encoderService.readCard(hotelInfo);
 
+        // Lire le numéro de série physique de la carte (CE_GetCardNo)
+        let cardNo = null;
+        try {
+            cardNo = await encoderService.getCardNumber();
+            console.log(`✓ Numéro de carte (UID): ${cardNo}`);
+        } catch (e) {
+            console.warn(`⚠️ Lecture numéro carte échouée: ${e.message}`);
+        }
+
         encoderService.disconnect();
 
         request.status = 'success';
         request.completedAt = new Date();
         request.cardData = cardData;
+        request.cardNo = cardNo;
 
         console.log(`✅ Encodage réussi pour chambre ${request.roomNumber}`);
 
