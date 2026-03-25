@@ -15,13 +15,19 @@ app.use(express.static(__dirname)); // Pour servir les fichiers HTML
 
 // Configuration
 const CONFIG = {
-    ttlockApi: process.env.TTLOCK_API || 'https://euapi.ttlock.com/v3',
-    clientId: process.env.CLIENT_ID || '5e53c28e38d94c0d99d0f83fe9e9fe3a',
-    clientSecret: process.env.CLIENT_SECRET || '85d76ce1294849b60b9664ccf332b42d',
-    comPort: process.env.COM_PORT || 'COM3',
+    ttlockApi:     process.env.TTLOCK_API      || 'https://euapi.ttlock.com/v3',
+    clientId:      process.env.CLIENT_ID       || 'c38e2073f5f24f9b9ec7b986739071be',
+    clientSecret:  process.env.CLIENT_SECRET   || '56477c7443d81c7f049d9d0cf29649bc',
+    // Compte hôtel TTHotel pour OAuth (active le mode TTHotel)
+    hotelUsername: process.env.HOTEL_USERNAME  || 'h_1771838510017',
+    hotelPassword: process.env.HOTEL_PASSWORD  || 'ed1e90da0b8f1d4a9cb158843c34d114', // MD5
+    oauthUrl:      'https://euapi.sciener.com/oauth2/token',
+    accessToken:   null,
+    tokenExpiry:   null,
+    comPort:       process.env.COM_PORT        || 'COM9',
     currentHotelInfo: null,
-    hotelInfoExpiry: null,
-    pendingRequests: new Map()
+    hotelInfoExpiry:  null,
+    pendingRequests:  new Map()
 };
 
 // Fonction utilitaire pour le fuseau horaire
@@ -107,28 +113,58 @@ console.log('✓ DLL chargée avec succès');
 
 // Service de gestion hotelInfo
 class HotelInfoManager {
+
+    // Obtenir un access_token OAuth (mode TTHotel uniquement)
+    async getAccessToken() {
+        if (CONFIG.accessToken && CONFIG.tokenExpiry && Date.now() < CONFIG.tokenExpiry) {
+            return CONFIG.accessToken;
+        }
+
+        console.log('Authentification TTHotel (OAuth)...');
+        const params = new URLSearchParams({
+            clientId:     CONFIG.clientId,
+            clientSecret: CONFIG.clientSecret,
+            username:     CONFIG.hotelUsername,
+            password:     CONFIG.hotelPassword,
+        });
+
+        const response = await axios.post(CONFIG.oauthUrl, params.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        if (!response.data.access_token) {
+            throw new Error(`OAuth échoué : ${JSON.stringify(response.data)}`);
+        }
+
+        CONFIG.accessToken = response.data.access_token;
+        // expires_in en secondes, on garde 5 min de marge
+        CONFIG.tokenExpiry = Date.now() + ((response.data.expires_in || 7776000) - 300) * 1000;
+        console.log('✓ Access token TTHotel obtenu');
+        return CONFIG.accessToken;
+    }
+
     async refreshHotelInfo() {
         try {
             const timestamp = Date.now();
             const url = `${CONFIG.ttlockApi}/hotel/getInfo`;
-
             console.log(`Récupération hotelInfo depuis ${url}...`);
 
-            const response = await axios.get(url, {
-                params: {
-                    clientId: CONFIG.clientId,
-                    clientSecret: CONFIG.clientSecret,
-                    date: timestamp
-                }
-            });
+            // hotel/getInfo utilise toujours clientId + clientSecret (pas d'accessToken)
+            // L'OAuth sert uniquement pour les autres endpoints TTHotel cloud
+            if (CONFIG.hotelUsername && CONFIG.hotelPassword) {
+                await this.getAccessToken(); // pré-chauffer le token pour usage ultérieur
+            }
+            const params = { clientId: CONFIG.clientId, clientSecret: CONFIG.clientSecret, date: timestamp };
+
+            const response = await axios.get(url, { params });
 
             if (response.data.errcode === 0 || response.data.hotelInfo) {
                 CONFIG.currentHotelInfo = response.data.hotelInfo;
-                CONFIG.hotelInfoExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+                CONFIG.hotelInfoExpiry = Date.now() + 10 * 60 * 1000;
                 console.log('✓ hotelInfo récupéré avec succès');
                 return CONFIG.currentHotelInfo;
             } else {
-                throw new Error(`Erreur API: ${response.data.errmsg || 'Inconnue'}`);
+                throw new Error(`Erreur API: ${response.data.errmsg || JSON.stringify(response.data)}`);
             }
         } catch (error) {
             console.error('✗ Erreur récupération hotelInfo:', error.message);
@@ -607,6 +643,11 @@ async function processEncodingRequest(requestId) {
 
         await encoderService.connect();
         await encoderService.initializeEncoder(hotelInfo);
+
+        // CE_InitCard optionnel : sauté si hotelInfo TTHotel (code 106 sinon)
+        if (!CONFIG.hotelUsername) {
+            await encoderService.initCard(hotelInfo);
+        }
 
         await encoderService.writeCard(hotelInfo, {
             roomNumber: request.roomNumber,
